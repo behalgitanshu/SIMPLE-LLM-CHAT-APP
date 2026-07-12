@@ -135,7 +135,6 @@ export default function App() {
     setStatus("answering");
     setInput("");
     wsRef.current.send(JSON.stringify({ message: trimmed }));
-    requestAnimationFrame(() => textareaRef.current?.focus());
   }
 
   function onKeyDown(e) {
