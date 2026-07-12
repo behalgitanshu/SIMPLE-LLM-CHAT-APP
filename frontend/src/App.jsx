@@ -26,7 +26,10 @@ const STATUS_LABEL = {
   answering: "Answering…",
   reconnecting: "Reconnecting…",
   connecting: "Connecting…",
+  unavailable: "Service unavailable",
 };
+
+const UNAVAILABLE_AFTER_MS = 20000;
 
 export default function App() {
   const [messages, setMessages] = useState(loadStoredMessages);
@@ -36,6 +39,7 @@ export default function App() {
   const messagesEndRef = useRef(null);
   const reconnectTimer = useRef(null);
   const textareaRef = useRef(null);
+  const firstFailureRef = useRef(null);
   const [starterQueries, setStarterQueries] = useState(() => pickStarterQueries());
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [debouncedInput, setDebouncedInput] = useState("");
@@ -73,10 +77,16 @@ export default function App() {
 
     ws.onopen = () => {
       if (wsRef.current !== ws) return;
+      firstFailureRef.current = null;
       setStatus("connected");
     };
     ws.onclose = () => {
       if (wsRef.current !== ws) return;
+      if (firstFailureRef.current == null) firstFailureRef.current = Date.now();
+      if (Date.now() - firstFailureRef.current >= UNAVAILABLE_AFTER_MS) {
+        setStatus("unavailable");
+        return;
+      }
       setStatus("reconnecting");
       reconnectTimer.current = setTimeout(connect, 1500);
     };
@@ -154,6 +164,13 @@ export default function App() {
     connect();
   }
 
+  function retry() {
+    clearTimeout(reconnectTimer.current);
+    firstFailureRef.current = null;
+    setStatus("connecting");
+    connect();
+  }
+
   function pickSuggestion(query) {
     setInput(query);
     setShowSuggestions(false);
@@ -161,6 +178,7 @@ export default function App() {
   }
 
   const isBusy = status === "connecting" || status === "reconnecting";
+  const isUnavailable = status === "unavailable";
   const autoSuggestions = getAutoSuggestions(debouncedInput, starterQueries);
 
   return (
@@ -182,7 +200,18 @@ export default function App() {
       </div>
 
       <div className="messages">
-        {messages.length === 0 && (
+        {isUnavailable && (
+          <div className="empty-state">
+            <div className="empty-icon">⚠</div>
+            <h2>Service unavailable</h2>
+            <p>Couldn't reach the assistant. It may be restarting or down.</p>
+            <button className="btn btn-primary" onClick={retry}>
+              Retry
+            </button>
+          </div>
+        )}
+
+        {!isUnavailable && messages.length === 0 && (
           <div className="empty-state">
             <div className="empty-icon">✦</div>
             <h2>Simple Chat</h2>
@@ -238,6 +267,7 @@ export default function App() {
             onKeyDown={onKeyDown}
             placeholder="Message the assistant…"
             rows={1}
+            disabled={isUnavailable}
           />
           <button
             className="btn btn-primary"
